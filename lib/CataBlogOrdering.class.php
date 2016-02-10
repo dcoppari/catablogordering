@@ -16,23 +16,24 @@ class CataBlogCart
 
 		if ( !count($cb_options) && !isset($cb_options['public_post_slug']) ) return false;
 
-		$catablog_item_page = strpos($_SERVER['REQUEST_URI'], $cb_options['public_post_slug']) !== false ||
-							  strpos($_SERVER['REQUEST_URI'], $cb_options['public_tax_slug'])  !== false ||
-							  strpos($_SERVER['REQUEST_URI'], 'catablog-items') !== false ||
-							  strpos($_SERVER['REQUEST_URI'], 'catablog-terms') !== false;
-			      	    
-	    if ( ($catablog_item_page && isset( $_REQUEST['cmd'] )) || isset($_REQUEST['catablogcartprocess']) )
+		$catablog_item_page = strpos($_SERVER['REQUEST_URI'], $cb_options['public_post_slug']) !== false 
+		                   || strpos($_SERVER['REQUEST_URI'], $cb_options['public_tax_slug'])  !== false 
+		                   || strpos($_SERVER['REQUEST_URI'], 'catablog-items') !== false 
+		                   || strpos($_SERVER['REQUEST_URI'], 'catablog-terms') !== false
+		                   || (isset($_REQUEST['cmd']) && $_REQUEST['cmd'] !== '')  ;
+
+	    if ( $catablog_item_page || isset($_REQUEST['catablogcartprocess']) )
 	    {
 		    $post_vars = array_map('stripslashes_deep', $_REQUEST);
 		    $post_vars = array_map('trim', $post_vars);
-			
+
 			$redirect = true;
 			$redirect_id = home_url() . '?page_id='.get_option('catablogcart_pageid',0);
 			
 			$command = $post_vars['cmd'];
 			
 			do_action('catablogcart_before_event', $command);
-		    
+
 			switch( $post_vars['cmd'] )
 		    {
 		        case '_cart':
@@ -41,6 +42,10 @@ class CataBlogCart
                     
                 case '_empty':
                     CataBlogCart::emptyCart();
+		            break;
+
+                case '_thanks':
+                    CataBlogCart::thanksCart();
 		            break;
 		            
 		        case '_remove':
@@ -141,9 +146,18 @@ class CataBlogCart
 		@session_start();
 
 		$hidePrices  = (get_option('catablogcart_hideprices', '') != '');
-		
+
+		// Mercado Pago 
+		$mp          = false;
+		$mpcid       = get_option('catablogcart_mpclientid','');
+		$mpcscrt     = get_option('catablogcart_mpclientscrt','');
+		$mpsandbox   = get_option('catablogcart_mpsandbox','') == 'yes';
+
+		$permalink   = get_permalink( get_option('catablogcart_pageid',0) );
+		$preference_data = [];
         $sent = false;
         $message = '';
+
         if ( !isset($_SESSION['cart']) ) 
             $empty = true;        
         else
@@ -171,9 +185,21 @@ class CataBlogCart
 
 		$cart = $_SESSION['cart']['items'];
 
-		ob_start();
+		if(!$hidePrices && $mpcid != '' && $mpcscrt != '')  
+		{
+			include dirname(__FILE__)."/mercadopago.php";
+  			$mp = new MP($mpcid, $mpcscrt);
+  			//$mp->sandbox_mode($mpsandbox);
+    			
+		}
 		
+		$preference_data["back_urls"]["success"] = $permalink.'?catablogcartprocess&cmd=_thanks';
+		$preference_data["back_urls"]["pending"] = $permalink.'?catablogcartprocess&cmd=_thanks';
+		$preference_data["back_urls"]["failure"] = $permalink;
+		
+		ob_start();
 		?>
+		
 		<div class="catablog-cart">
 
 			<div class="catablog-cart-message"><?php echo $message; ?></div>
@@ -204,7 +230,18 @@ class CataBlogCart
 						<?php endif; ?>
 						<td><a class="catablog-cart-action cart-remove" href="?catablog-items&cmd=_remove&item_order=<?php echo $order; ?>">x</a></td>
 					</tr>
-					<?php $total = $total + $item['total']; } ?>
+					<?php 
+
+						$preference_data["items"][] = array("title" => $item['item_name'], 
+															"currency_id" => "ARS", 
+															"quantity" => $item['quantity'] + 0,
+															"category_id" => "computing",
+															"unit_price" => $item['amount'] + 0 );
+															
+						
+						$total = $total + $item['total']; 
+					} 
+					?>
 				</tbody>
 				
 				<?php if(!$hidePrices) : ?>
@@ -217,9 +254,35 @@ class CataBlogCart
 				</tfoot>
 				<?php endif; ?>
 			</table>               
-		   
-			<a class="catablog-cart-action cart-empty-cart" href="?catablog-items&cmd=_empty"><?php _e('Empty Cart','catablogcart'); ?></a>
+		    <br/>
 			
+			
+			<?php if(!$hidePrices && $mp !== false) {
+				
+					try 
+					{
+						$preference = $mp->create_preference($preference_data); 
+						$mphref = $mpsandbox ? $preference["response"]["sandbox_init_point"] : $preference["response"]["init_point"];
+						
+					?>
+
+						<a href="<?php echo $mphref; ?>" name="MP-Checkout" class="orange-ar-m-sq-arall"><?php _e('CONFIRM','catablogcart'); ?></a>
+						
+						<script type="text/javascript" src="http://mp-tools.mlstatic.com/buttons/render.js"></script>
+
+					<?php
+					} 
+					catch(Exception $e) 
+					{
+					  echo $e->getMessage(); 
+					}
+
+			} ?>
+
+			<a class="button MP-common-orange-CDm MP-ar-m-sq catablog-cart-action cart-empty-cart" href="?catablog-items&cmd=_empty"><?php _e('Empty Cart','catablogcart'); ?></a>
+			
+			<?php if($mp === false) { ?>
+
 			<h2><?php _e('Order Now','catablogcart'); ?></h2>
 			
 			<form method="POST" action="?catablog-items" class="catablog-cart-form" >
@@ -262,8 +325,8 @@ class CataBlogCart
 				</span>
 			
 			</form>
-			
-		
+			<?php } ?>
+
 		</div>
 		<?php
 		
@@ -399,15 +462,26 @@ class CataBlogCart
         
     }
 
-
+    public static function thanksCart()
+    {
+        @session_start();
+        if ( isset($_SESSION['cart']) ) 
+		{
+            unset($_SESSION['cart']['items']);
+			@session_destroy();
+        }       
+		return '<div class="catablog-cart-message order-sent">'. __('Your order was sent, you will receive an email notifying you that your order has been sent.','catablogcart') . '</div>';
+        
+    }
+	
 	// ADMIN AREA
 	public static function admin_settings_menu() 
 	{
-		add_submenu_page(	'options-general.php',   
+		add_submenu_page(	'catablog',   
 							__('Catablog Cart Options','catablogcart'),  
 							__('Catablog Cart Options','catablogcart'), 
 							'administrator', 
-							'catablogcart' , 
+							'catablog-cart' , 
 							array('CataBlogCart','admin_settings_page') 
 						);
 						
@@ -422,6 +496,10 @@ class CataBlogCart
 		register_setting('catablogcart-group', 'catablogcart_emailtemplate');
 		register_setting('catablogcart-group', 'catablogcart_emailhtml'    );
 		register_setting('catablogcart-group', 'catablogcart_hideprices'   );
+
+		register_setting('catablogcart-group', 'catablogcart_mpclientid'   );
+		register_setting('catablogcart-group', 'catablogcart_mpclientscrt' );
+		register_setting('catablogcart-group', 'catablogcart_mpsandbox'    );
 	}
     
     public static function admin_settings_page()
@@ -476,25 +554,53 @@ class CataBlogCart
 				</td>
 				</tr>
 							
-				<tr>
-				  <td colspan="2" align="right" style="text-align: right;">
-					<small>If you enjoy this plugin please donate!</small>
-					<br />
-					<form action="https://www.paypal.com/cgi-bin/webscr" method="post">
-					  <input type="hidden" name="cmd" value="_s-xclick">
-					  <input type="hidden" name="hosted_button_id" value="C2PZ5SY3T8PYN">
-					  <input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif" border="0" name="submit" alt="PayPal - The safer, easier way to pay online!">
-					  <img alt="" border="0" src="https://www.paypalobjects.com/es_XC/i/scr/pixel.gif" width="1" height="1">
-					  </form>
-				  </td>
+				<tr valign="top">
+				<th colspan="2" bgcolor="#BBB"><?php _e('Mercadopago','catablogcart'); ?></th>
 				</tr>
+
+				<tr valign="top">
+				<th scope="row"><?php _e('Client_ID','catablogcart'); ?></th>
+				<td>
+				    <input type="text" name="catablogcart_mpclientid" value="<?php echo get_option('catablogcart_mpclientid','') ?>" />
+				    <small><?php _e('This is MERCADOPAGO Client ID','catablogcart'); ?></small>
+				</td>
+				</tr>
+
+				<tr valign="top">
+				<th scope="row"><?php _e('Client_SECRET','catablogcart'); ?></th>
+				<td>
+				    <input type="password" name="catablogcart_mpclientscrt" value="<?php echo get_option('catablogcart_mpclientscrt','') ?>" />
+				    <small><?php _e('This is MERCADOPAGO Client SECRET','catablogcart'); ?></small>
+				</td>
+				</tr>
+
+				<tr valign="top">
+				<th scope="row"><?php _e('Enable Sandbox','catablogcart'); ?></th>
+				<td>
+				    <input type="checkbox" name="catablogcart_mpsandbox" value="yes" <?php echo get_option('catablogcart_mpsandbox','yes') != '' ? 'checked="checked"' : ''; ?>" />
+				    <small><?php _e('Enable this option to use Mercadopago in Sandbox mode','catablogcart'); ?></small>
+				</td>
+				</tr>
+
+
 			</table>
 		
 			<p class="submit">
-			<input type="submit" class="button-primary" value="<?php _e('Save Changes'); ?>" />
+			  <input type="submit" class="button-primary" value="<?php _e('Save Changes'); ?>" />
 			</p>
 
 		</form>
+
+				  <div style="text-align: center;">
+					<small>If you enjoy this plugin please donate!</small>
+					<br />
+					<form method="post" action="https://www.paypal.com/cgi-bin/webscr" target="_blank">
+					  <input type="hidden" name="cmd" value="_s-xclick">
+					  <input type="hidden" name="hosted_button_id" value="C2PZ5SY3T8PYN">
+					  <input type="image" name="submit" src="https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif" border="0" >
+					  <img alt="" border="0" src="https://www.paypalobjects.com/es_XC/i/scr/pixel.gif" width="1" height="1">
+					</form>
+				  </div>
 
 		</div>
 		
@@ -502,4 +608,3 @@ class CataBlogCart
     }
 
 }
-

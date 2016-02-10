@@ -1,13 +1,13 @@
 <?php
 /*
-Plugin Name: Catablog Ordering
+Plugin Name: Purchase Orders for Catablog
 Plugin URI: https://github.com/genus/catablogordering
 Description: Add Catablog Plugin Support for Making Purchase Orders
-Version: 0.2
+Version: 0.3
 Author: diego2k
-Author URI: http://www.estudiogenus.com/
+Author URI: http://www.mundoit.com.ar/
 
-Copyright 2012-2014 Diego Coppari (email: diego2k@gmail.com)
+Copyright 2012  Diego Coppari (email: diego2k@gmail.com)
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,12 +28,12 @@ if ( !function_exists( 'add_action' ) )
     exit;
 }
                 
-require('CataBlogOrdering.class.php');
-require('ArrayToTextTable.class.php');
+require('lib/CataBlogOrdering.class.php');
+require('lib/ArrayToTextTable.class.php');
 
 load_plugin_textdomain('catablogcart', false, dirname( plugin_basename( __FILE__ ) ) . '/lang');
 
-add_action('admin_menu', array('CataBlogCart', 'admin_settings_menu') );
+add_action('admin_menu', array('CataBlogCart', 'admin_settings_menu'), 30 );
 
 add_shortcode('catablogcart', array('CataBlogCart', 'showCart'));
 
