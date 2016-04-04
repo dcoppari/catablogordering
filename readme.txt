@@ -1,9 +1,9 @@
 === Purchase Order for Catablog - Add Catablog Support for Making Purchase Orders ===
 Contributors: diego2k
 Tags: plugin, admin, product, sales, orders, purchase, store, cart, ecommerce, Spanish
-Requires at least: 4.4
+Requires at least: 3.4
 Tested up to: 4.4
-Stable tag: 0.2
+Stable tag: 0.3
 
 == Description ==
 
@@ -50,6 +50,9 @@ You can find me on facebook/diego2k
 
 = This is cool how can i help? =
 Make donation, make translations, improve it, spread the word!
+
+== 0.3 ==
+Compatible with wordpress 4
 
 == 0.2 ==
 Improved code
